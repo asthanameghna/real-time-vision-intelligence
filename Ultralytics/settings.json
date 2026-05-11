@@ -1,0 +1,21 @@
+{
+  "settings_version": "0.0.6",
+  "datasets_dir": "/Users/meghna/Projects/real-time-vision-intelligence/datasets",
+  "weights_dir": "/Users/meghna/Projects/real-time-vision-intelligence/weights",
+  "runs_dir": "/Users/meghna/Projects/real-time-vision-intelligence/runs",
+  "uuid": "f9f51149a65c84ba29ec196838dfcd9d08b7288a839e6cb5a44a0b654e337163",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "hub": true,
+  "mlflow": true,
+  "neptune": true,
+  "raytune": true,
+  "tensorboard": false,
+  "wandb": false,
+  "vscode_msg": true,
+  "openvino_msg": true
+}
