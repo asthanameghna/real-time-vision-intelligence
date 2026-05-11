@@ -4,12 +4,27 @@
 from pathlib import Path
 
 import cv2
+import yaml
 
 from app.core.detector import ObjectDetector
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-INPUT_VIDEO = PROJECT_ROOT / "data" / "sample_videos" / "test.mp4"
-OUTPUT_VIDEO = PROJECT_ROOT / "data" / "outputs" / "detection_output.mp4"
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default.yaml"
+
+
+def load_config(path: Path) -> dict:
+    with path.open(encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    if not isinstance(cfg, dict):
+        raise ValueError(f"Config must be a mapping: {path}")
+    return cfg
+
+
+def resolve_path(value: str | Path) -> Path:
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    return PROJECT_ROOT / p
 
 
 def draw_detections(frame, detections):
@@ -37,14 +52,26 @@ def draw_detections(frame, detections):
 
 
 def main() -> None:
-    if not INPUT_VIDEO.is_file():
-        raise FileNotFoundError(f"Input video not found: {INPUT_VIDEO}")
+    if not DEFAULT_CONFIG_PATH.is_file():
+        raise FileNotFoundError(f"Config not found: {DEFAULT_CONFIG_PATH}")
 
-    OUTPUT_VIDEO.parent.mkdir(parents=True, exist_ok=True)
+    cfg = load_config(DEFAULT_CONFIG_PATH)
+    try:
+        model = str(cfg["model"])
+        conf = float(cfg["confidence_threshold"])
+        input_video = resolve_path(str(cfg["input_video"]))
+        output_video = resolve_path(str(cfg["output_video"]))
+    except KeyError as e:
+        raise KeyError(f"Missing required config key: {e.args[0]}") from e
 
-    cap = cv2.VideoCapture(str(INPUT_VIDEO))
+    if not input_video.is_file():
+        raise FileNotFoundError(f"Input video not found: {input_video}")
+
+    output_video.parent.mkdir(parents=True, exist_ok=True)
+
+    cap = cv2.VideoCapture(str(input_video))
     if not cap.isOpened():
-        raise RuntimeError(f"Could not open video: {INPUT_VIDEO}")
+        raise RuntimeError(f"Could not open video: {input_video}")
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -52,13 +79,13 @@ def main() -> None:
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(
-        str(OUTPUT_VIDEO), fourcc, float(fps), (width, height)
+        str(output_video), fourcc, float(fps), (width, height)
     )
     if not writer.isOpened():
         cap.release()
-        raise RuntimeError(f"Could not open writer for: {OUTPUT_VIDEO}")
+        raise RuntimeError(f"Could not open writer for: {output_video}")
 
-    detector = ObjectDetector()
+    detector = ObjectDetector(model_path=model, conf_threshold=conf)
 
     try:
         while True:
@@ -72,7 +99,7 @@ def main() -> None:
         cap.release()
         writer.release()
 
-    print(f"Wrote {OUTPUT_VIDEO}")
+    print(f"Wrote {output_video}")
 
 
 if __name__ == "__main__":

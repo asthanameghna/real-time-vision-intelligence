@@ -1,0 +1,5 @@
+# Paths are relative to the project root unless absolute.
+model: yolo11n.pt
+confidence_threshold: 0.25
+input_video: data/sample_videos/test.mp4
+output_video: data/outputs/detection_output.mp4
