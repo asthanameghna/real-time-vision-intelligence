@@ -3,3 +3,8 @@ model: yolo11n.pt
 confidence_threshold: 0.25
 input_video: data/sample_videos/test.mp4
 output_video: data/outputs/tracking_output.mp4
+
+# Trajectory length (centroid samples) and motion classification.
+motion:
+  max_trajectory_points: 64
+  stationary_speed_pps: 25.0
