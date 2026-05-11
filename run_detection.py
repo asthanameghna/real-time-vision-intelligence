@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Run YOLO11 on a sample video and write an annotated MP4."""
+"""Run YOLO11 + ByteTrack on a sample video and write an annotated MP4."""
 
 from pathlib import Path
 
 import cv2
 import yaml
 
-from app.core.detector import ObjectDetector
+from app.core.tracker import ByteTrackTracker, TrackedObject
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default.yaml"
@@ -27,13 +27,12 @@ def resolve_path(value: str | Path) -> Path:
     return PROJECT_ROOT / p
 
 
-def draw_detections(frame, detections):
-    """Draw bounding boxes and class labels on a BGR frame."""
-    for det in detections:
-        x1, y1 = int(det.x1), int(det.y1)
-        x2, y2 = int(det.x2), int(det.y2)
+def draw_tracks(frame, tracks: list[TrackedObject]):
+    """Draw bounding boxes, class, confidence, and track ID on a BGR frame."""
+    for t in tracks:
+        x1, y1, x2, y2 = int(t.bbox[0]), int(t.bbox[1]), int(t.bbox[2]), int(t.bbox[3])
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 220, 0), 2)
-        caption = f"{det.label} {det.confidence:.2f}"
+        caption = f"{t.label} {t.confidence:.2f} ID:{t.track_id}"
         (tw, th), _ = cv2.getTextSize(
             caption, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
         )
@@ -85,15 +84,15 @@ def main() -> None:
         cap.release()
         raise RuntimeError(f"Could not open writer for: {output_video}")
 
-    detector = ObjectDetector(model_path=model, conf_threshold=conf)
+    tracker = ByteTrackTracker(model_path=model, conf_threshold=conf)
 
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
-            dets = detector.detect(frame)
-            annotated = draw_detections(frame, dets)
+            tracks = tracker.track(frame)
+            annotated = draw_tracks(frame, tracks)
             writer.write(annotated)
     finally:
         cap.release()
