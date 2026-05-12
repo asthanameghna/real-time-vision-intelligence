@@ -109,11 +109,50 @@ def frame():
     return Response(content=buf.tobytes(), media_type="image/jpeg")
 
 
-def _mjpeg_frame_chunks(video_path: Path):
+def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
+    from collections import deque
+
+    from app.core.events import (
+        EventEngine,
+        draw_recent_event_alerts,
+        draw_zones_and_lines,
+        load_zone_specs,
+    )
+    from app.core.motion import MotionEstimator
+    from app.core.tracker import ByteTrackTracker
+    from run_detection import draw_tracks, load_config, resolve_path
+
+    cfg = load_config(config_path)
+    model = str(cfg["model"])
+    conf = float(cfg["confidence_threshold"])
+    motion_cfg = cfg.get("motion") or {}
+    if not isinstance(motion_cfg, dict):
+        motion_cfg = {}
+    max_traj = int(motion_cfg.get("max_trajectory_points", 64))
+    stationary_pps = float(motion_cfg.get("stationary_speed_pps", 25.0))
+
+    zones_path = resolve_path(str(cfg.get("zones_config", "configs/zones.yaml")))
+    with zones_path.open(encoding="utf-8") as zf:
+        zones_data = yaml.safe_load(zf)
+    if not isinstance(zones_data, dict):
+        return
+    zone_specs, line_specs, occ_zone_ids = load_zone_specs(zones_data)
+
+    tracker = ByteTrackTracker(model_path=model, conf_threshold=conf)
+    motion = MotionEstimator(
+        max_trajectory_points=max_traj,
+        stationary_speed_pps=stationary_pps,
+    )
+    event_engine = EventEngine(
+        zone_specs, line_specs, occupancy_zone_ids=occ_zone_ids
+    )
+    recent_events: deque = deque(maxlen=12)
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return
     boundary = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+    frame_idx = 0
     try:
         while True:
             fps = float(cap.get(cv2.CAP_PROP_FPS))
@@ -127,17 +166,28 @@ def _mjpeg_frame_chunks(video_path: Path):
                 cap = cv2.VideoCapture(str(video_path))
                 if not cap.isOpened():
                     break
+                frame_idx = 0
+                motion = MotionEstimator(
+                    max_trajectory_points=max_traj,
+                    stationary_speed_pps=stationary_pps,
+                )
+                event_engine = EventEngine(
+                    zone_specs, line_specs, occupancy_zone_ids=occ_zone_ids
+                )
+                recent_events.clear()
                 continue
-            cv2.putText(
-                img,
-                "Real-Time Vision Intelligence System",
-                (10, 32),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                (255, 255, 255),
-                2,
-                cv2.LINE_AA,
-            )
+
+            time_sec = frame_idx / fps
+            tracks = tracker.track(img)
+            motion_by_id = motion.update(tracks, time_sec)
+            for ev in event_engine.process_frame(tracks, motion_by_id, time_sec):
+                recent_events.append(ev)
+
+            draw_zones_and_lines(img, zone_specs, line_specs)
+            draw_tracks(img, tracks, motion_by_id)
+            draw_recent_event_alerts(img, recent_events)
+            frame_idx += 1
+
             ret, buf = cv2.imencode(".jpg", img)
             if not ret or buf is None:
                 continue
@@ -149,13 +199,19 @@ def _mjpeg_frame_chunks(video_path: Path):
 
 @app.get("/stream")
 def stream():
+    from app.core.events import load_zone_specs
+    from run_detection import load_config, resolve_path
+
     if not _DEFAULT_CONFIG_PATH.is_file():
         raise HTTPException(
             status_code=500,
             detail="config not found: configs/default.yaml",
         )
-    with _DEFAULT_CONFIG_PATH.open(encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
+    try:
+        cfg = load_config(_DEFAULT_CONFIG_PATH)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
     raw = cfg.get("input_video")
     if not raw or not isinstance(raw, str):
         raise HTTPException(
@@ -182,7 +238,32 @@ def stream():
             status_code=503,
             detail=f"could not read first frame from: {video_path}",
         )
+
+    try:
+        str(cfg["model"])
+        float(cfg["confidence_threshold"])
+    except KeyError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"configs/default.yaml missing required key: {e.args[0]}",
+        ) from e
+
+    zones_path = resolve_path(str(cfg.get("zones_config", "configs/zones.yaml")))
+    if not zones_path.is_file():
+        raise HTTPException(
+            status_code=500,
+            detail=f"zones config not found: {zones_path}",
+        )
+    try:
+        with zones_path.open(encoding="utf-8") as zf:
+            zd = yaml.safe_load(zf)
+        if not isinstance(zd, dict):
+            raise ValueError("zones config must be a mapping")
+        load_zone_specs(zd)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
     return StreamingResponse(
-        _mjpeg_frame_chunks(video_path),
+        _mjpeg_frame_chunks(video_path, _DEFAULT_CONFIG_PATH),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
