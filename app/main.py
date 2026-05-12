@@ -4,7 +4,7 @@ from pathlib import Path
 import cv2
 import yaml
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 app = FastAPI()
 
@@ -105,3 +105,66 @@ def frame():
             detail="could not encode frame as JPEG",
         )
     return Response(content=buf.tobytes(), media_type="image/jpeg")
+
+
+def _mjpeg_frame_chunks(video_path: Path):
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return
+    boundary = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+    try:
+        while True:
+            ok, img = cap.read()
+            if not ok or img is None:
+                cap.release()
+                cap = cv2.VideoCapture(str(video_path))
+                if not cap.isOpened():
+                    break
+                continue
+            ret, buf = cv2.imencode(".jpg", img)
+            if not ret or buf is None:
+                continue
+            yield boundary + buf.tobytes() + b"\r\n"
+    finally:
+        cap.release()
+
+
+@app.get("/stream")
+def stream():
+    if not _DEFAULT_CONFIG_PATH.is_file():
+        raise HTTPException(
+            status_code=500,
+            detail="config not found: configs/default.yaml",
+        )
+    with _DEFAULT_CONFIG_PATH.open(encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    raw = cfg.get("input_video")
+    if not raw or not isinstance(raw, str):
+        raise HTTPException(
+            status_code=500,
+            detail="configs/default.yaml missing valid input_video string",
+        )
+    video_path = Path(raw) if Path(raw).is_absolute() else _ROOT / raw
+    if not video_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"input video file not found: {video_path}",
+        )
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        cap.release()
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not open video for reading: {video_path}",
+        )
+    ok, _ = cap.read()
+    cap.release()
+    if not ok:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not read first frame from: {video_path}",
+        )
+    return StreamingResponse(
+        _mjpeg_frame_chunks(video_path),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
