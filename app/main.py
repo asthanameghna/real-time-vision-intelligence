@@ -30,3 +30,13 @@ def events():
             continue
 
     return parsed[-10:]
+
+
+@app.get("/metrics")
+def metrics():
+    return {
+        "service_name": "real-time-vision-intelligence",
+        "processed_frames": 0,
+        "fps": 0.0,
+        "total_events": 0,
+    }
