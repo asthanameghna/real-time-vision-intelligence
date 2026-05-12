@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """Run YOLO11 + ByteTrack on a sample video and write an annotated MP4."""
 
+from collections import deque
+import json
 from pathlib import Path
 
 import cv2
 import numpy as np
 import yaml
 
+from app.core.events import (
+    EventEngine,
+    draw_recent_event_alerts,
+    draw_zones_and_lines,
+    load_zone_specs,
+)
 from app.core.motion import MotionEstimator, TrackMotionState
 from app.core.tracker import ByteTrackTracker, TrackedObject
 
@@ -87,6 +95,9 @@ def main() -> None:
     except KeyError as e:
         raise KeyError(f"Missing required config key: {e.args[0]}") from e
 
+    zones_path = resolve_path(str(cfg.get("zones_config", "configs/zones.yaml")))
+    events_path = resolve_path(str(cfg.get("events_output", "data/outputs/events.jsonl")))
+
     motion_cfg = cfg.get("motion") or {}
     if not isinstance(motion_cfg, dict):
         raise ValueError("Config key 'motion' must be a mapping when present")
@@ -96,7 +107,18 @@ def main() -> None:
     if not input_video.is_file():
         raise FileNotFoundError(f"Input video not found: {input_video}")
 
+    if not zones_path.is_file():
+        raise FileNotFoundError(f"Zones config not found: {zones_path}")
+
+    with zones_path.open(encoding="utf-8") as zf:
+        zones_data = yaml.safe_load(zf)
+    if not isinstance(zones_data, dict):
+        raise ValueError(f"Zones config must be a mapping: {zones_path}")
+    zone_specs, line_specs, occ_zone_ids = load_zone_specs(zones_data)
+    event_engine = EventEngine(zone_specs, line_specs, occupancy_zone_ids=occ_zone_ids)
+
     output_video.parent.mkdir(parents=True, exist_ok=True)
+    events_path.parent.mkdir(parents=True, exist_ok=True)
 
     cap = cv2.VideoCapture(str(input_video))
     if not cap.isOpened():
@@ -119,24 +141,34 @@ def main() -> None:
         max_trajectory_points=max_traj,
         stationary_speed_pps=stationary_pps,
     )
+    recent_events: deque[dict] = deque(maxlen=12)
 
     try:
-        frame_idx = 0
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            time_sec = frame_idx / float(fps)
-            tracks = tracker.track(frame)
-            motion_by_id = motion.update(tracks, time_sec)
-            draw_tracks(frame, tracks, motion_by_id)
-            writer.write(frame)
-            frame_idx += 1
+        with events_path.open("w", encoding="utf-8") as events_f:
+            frame_idx = 0
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                time_sec = frame_idx / float(fps)
+                tracks = tracker.track(frame)
+                motion_by_id = motion.update(tracks, time_sec)
+                frame_events = event_engine.process_frame(tracks, motion_by_id, time_sec)
+                for ev in frame_events:
+                    events_f.write(json.dumps(ev) + "\n")
+                    recent_events.append(ev)
+
+                draw_zones_and_lines(frame, zone_specs, line_specs)
+                draw_tracks(frame, tracks, motion_by_id)
+                draw_recent_event_alerts(frame, recent_events)
+                writer.write(frame)
+                frame_idx += 1
     finally:
         cap.release()
         writer.release()
 
     print(f"Wrote {output_video}")
+    print(f"Wrote {events_path}")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@ model: yolo11n.pt
 confidence_threshold: 0.25
 input_video: data/sample_videos/test.mp4
 output_video: data/outputs/tracking_output.mp4
+zones_config: configs/zones.yaml
+events_output: data/outputs/events.jsonl
 
 # Trajectory length (centroid samples) and motion classification.
 motion:

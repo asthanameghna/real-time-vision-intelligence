@@ -1,0 +1,22 @@
+# Pixel coordinates in the same space as the input video frames.
+# Adjust polygon and line endpoints to match your input_video resolution.
+
+zones:
+  - id: main_roi
+    name: Main ROI
+    polygon:
+      - [400, 120]
+      - [920, 120]
+      - [920, 620]
+      - [400, 620]
+
+lines:
+  - id: divider
+    name: Vertical divider
+    p1: [640, 100]
+    p2: [640, 640]
+
+# When zone_ids is omitted, occupancy_count is emitted for every zone when the count changes.
+occupancy:
+  zone_ids:
+    - main_roi
