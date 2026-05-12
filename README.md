@@ -6,6 +6,20 @@ Built to simulate how modern perception systems work in real-world environments 
 
 ---
 
+## Documentation
+
+Technical documentation for the implemented pipeline (`run_detection.py`, `app/core/`, `configs/`):
+
+- [Architecture](docs/architecture.md) — modules, data flow, temporal state
+- [Pipeline flow](docs/pipeline_flow.md) — per-frame lifecycle
+- [Tracking and motion](docs/tracking_and_motion.md) — ByteTrack, centroids, velocity, limitations
+- [Event engine](docs/event_engine.md) — zones, lines, occupancy, JSON schema
+- [Technical FAQ](docs/technical_faq.md) — design tradeoffs and scaling notes
+- [Debugging guide](docs/debugging_guide.md) — common failures and instrumentation
+- [Design decisions](docs/design_decisions.md) — engineering rationale
+
+---
+
 ## Features
 
 - Real-time object detection
@@ -61,18 +75,41 @@ Built to simulate how modern perception systems work in real-world environments 
 
 ## System Architecture
 
-```text
-Video Source
-    ↓
-Object Detection
-    ↓
-Multi-Object Tracking
-    ↓
-Motion Estimation
-    ↓
-Event Engine
-    ↓
-Streaming + API Layer
+Implemented pipeline (`run_detection.py`): one synchronous frame loop. YOLO11 detection and ByteTrack association run inside a single `YOLO.track(..., persist=True)` call; the diagram shows them as logical stages.
+
+```mermaid
+flowchart TB
+    CFG["Config loading<br/>default.yaml · zones.yaml"]
+
+    VID["Video input<br/>OpenCV VideoCapture · BGR frames"]
+
+    subgraph INF["Tracking stack · Ultralytics"]
+        YOLO["YOLO11 object detection"]
+        BT["ByteTrack multi-object tracking"]
+        YOLO --> BT
+    end
+
+    MOT["Motion estimation<br/>centroid trajectories · velocity · direction"]
+
+    EVT["Event engine<br/>polygons · line crossings · occupancy"]
+
+    LOG["JSONL event logging<br/>append per event"]
+
+    REN["OpenCV rendering<br/>zones · tracks · event HUD"]
+
+    OUT["Output video<br/>MP4 · VideoWriter"]
+
+    CFG -.->|model, thresholds, paths, motion params| INF
+    CFG -.->|zone geometry, line specs| EVT
+
+    VID --> YOLO
+    BT --> MOT
+    MOT --> EVT
+    EVT --> LOG
+    BT --> REN
+    MOT --> REN
+    EVT --> REN
+    REN --> OUT
 ```
 
 ---
