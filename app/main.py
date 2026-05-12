@@ -1,4 +1,6 @@
 import json
+import math
+import time
 from pathlib import Path
 
 import cv2
@@ -114,6 +116,11 @@ def _mjpeg_frame_chunks(video_path: Path):
     boundary = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
     try:
         while True:
+            fps = float(cap.get(cv2.CAP_PROP_FPS))
+            if not math.isfinite(fps) or fps <= 0:
+                fps = 30.0
+            delay = 1.0 / fps
+
             ok, img = cap.read()
             if not ok or img is None:
                 cap.release()
@@ -125,6 +132,7 @@ def _mjpeg_frame_chunks(video_path: Path):
             if not ret or buf is None:
                 continue
             yield boundary + buf.tobytes() + b"\r\n"
+            time.sleep(delay)
     finally:
         cap.release()
 
