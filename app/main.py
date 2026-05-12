@@ -128,6 +128,16 @@ def _mjpeg_frame_chunks(video_path: Path):
                 if not cap.isOpened():
                     break
                 continue
+            cv2.putText(
+                img,
+                "Real-Time Vision Intelligence System",
+                (10, 32),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
             ret, buf = cv2.imencode(".jpg", img)
             if not ret or buf is None:
                 continue
