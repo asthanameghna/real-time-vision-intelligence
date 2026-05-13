@@ -1,3 +1,4 @@
+import pandas as pd
 import requests
 import streamlit
 
@@ -20,3 +21,11 @@ else:
     streamlit.write(f"fps: {_m.get('fps')}")
     streamlit.write(f"active_tracks: {_m.get('active_tracks')}")
     streamlit.write(f"total_events: {_m.get('total_events')}")
+
+streamlit.subheader("Recent Events")
+try:
+    _e = requests.get("http://127.0.0.1:8000/events", timeout=2).json()
+except Exception as exc:
+    streamlit.error(f"events unavailable: {exc}")
+else:
+    streamlit.table(pd.DataFrame(_e))
