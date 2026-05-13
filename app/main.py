@@ -113,13 +113,11 @@ def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
     from collections import deque
 
     from app.core.events import (
-        EventEngine,
         draw_recent_event_alerts,
         draw_zones_and_lines,
         load_zone_specs,
     )
-    from app.core.motion import MotionEstimator
-    from app.core.tracker import ByteTrackTracker
+    from app.core.pipeline import VisionPipeline
     from run_detection import draw_tracks, load_config, resolve_path
 
     cfg = load_config(config_path)
@@ -138,13 +136,14 @@ def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
         return
     zone_specs, line_specs, occ_zone_ids = load_zone_specs(zones_data)
 
-    tracker = ByteTrackTracker(model_path=model, conf_threshold=conf)
-    motion = MotionEstimator(
+    pipeline = VisionPipeline(
+        model_path=model,
+        conf_threshold=conf,
         max_trajectory_points=max_traj,
         stationary_speed_pps=stationary_pps,
-    )
-    event_engine = EventEngine(
-        zone_specs, line_specs, occupancy_zone_ids=occ_zone_ids
+        zone_specs=zone_specs,
+        line_specs=line_specs,
+        occupancy_zone_ids=occ_zone_ids,
     )
     recent_events: deque = deque(maxlen=12)
 
@@ -167,20 +166,16 @@ def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
                 if not cap.isOpened():
                     break
                 frame_idx = 0
-                motion = MotionEstimator(
-                    max_trajectory_points=max_traj,
-                    stationary_speed_pps=stationary_pps,
-                )
-                event_engine = EventEngine(
-                    zone_specs, line_specs, occupancy_zone_ids=occ_zone_ids
-                )
+                pipeline.reset_state()
                 recent_events.clear()
                 continue
 
             time_sec = frame_idx / fps
-            tracks = tracker.track(img)
-            motion_by_id = motion.update(tracks, time_sec)
-            for ev in event_engine.process_frame(tracks, motion_by_id, time_sec):
+            tracks = pipeline.tracker.track(img)
+            motion_by_id = pipeline.motion.update(tracks, time_sec)
+            for ev in pipeline.event_engine.process_frame(
+                tracks, motion_by_id, time_sec
+            ):
                 recent_events.append(ev)
 
             draw_zones_and_lines(img, zone_specs, line_specs)
