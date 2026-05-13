@@ -10,6 +10,8 @@ from fastapi.responses import Response, StreamingResponse
 
 app = FastAPI()
 
+PROCESSED_FRAMES = 0
+
 _ROOT = Path(__file__).resolve().parent.parent
 _EVENTS_PATH = _ROOT / "data" / "outputs" / "events.jsonl"
 _DEFAULT_CONFIG_PATH = _ROOT / "configs" / "default.yaml"
@@ -59,7 +61,7 @@ def events():
 def metrics():
     return {
         "service_name": "real-time-vision-intelligence",
-        "processed_frames": 0,
+        "processed_frames": PROCESSED_FRAMES,
         "fps": 0.0,
         "total_events": _count_valid_event_lines(),
     }
@@ -110,6 +112,8 @@ def frame():
 
 
 def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
+    global PROCESSED_FRAMES
+
     from collections import deque
 
     from app.core.events import (
@@ -186,6 +190,7 @@ def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
             ret, buf = cv2.imencode(".jpg", img)
             if not ret or buf is None:
                 continue
+            PROCESSED_FRAMES += 1
             yield boundary + buf.tobytes() + b"\r\n"
             time.sleep(delay)
     finally:
