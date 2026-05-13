@@ -12,6 +12,14 @@ app = FastAPI()
 
 PROCESSED_FRAMES = 0
 ACTIVE_TRACKS = 0
+STREAM_START_TIME: float | None = None
+
+
+@app.on_event("startup")
+def _init_stream_start_time() -> None:
+    global STREAM_START_TIME
+    STREAM_START_TIME = time.monotonic()
+
 
 _ROOT = Path(__file__).resolve().parent.parent
 _EVENTS_PATH = _ROOT / "data" / "outputs" / "events.jsonl"
@@ -60,10 +68,16 @@ def events():
 
 @app.get("/metrics")
 def metrics():
+    st = STREAM_START_TIME
+    elapsed = (time.monotonic() - st) if st is not None else 0.0
+    if elapsed <= 0:
+        fps = 0.0
+    else:
+        fps = round(PROCESSED_FRAMES / elapsed, 2)
     return {
         "service_name": "real-time-vision-intelligence",
         "processed_frames": PROCESSED_FRAMES,
-        "fps": 0.0,
+        "fps": fps,
         "active_tracks": ACTIVE_TRACKS,
         "total_events": _count_valid_event_lines(),
     }
