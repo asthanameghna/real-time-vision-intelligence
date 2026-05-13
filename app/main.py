@@ -10,6 +10,17 @@ from fastapi.responses import Response, StreamingResponse
 
 app = FastAPI()
 
+PROCESSED_FRAMES = 0
+ACTIVE_TRACKS = 0
+STREAM_START_TIME: float | None = None
+
+
+@app.on_event("startup")
+def _init_stream_start_time() -> None:
+    global STREAM_START_TIME
+    STREAM_START_TIME = time.monotonic()
+
+
 _ROOT = Path(__file__).resolve().parent.parent
 _EVENTS_PATH = _ROOT / "data" / "outputs" / "events.jsonl"
 _DEFAULT_CONFIG_PATH = _ROOT / "configs" / "default.yaml"
@@ -57,10 +68,17 @@ def events():
 
 @app.get("/metrics")
 def metrics():
+    st = STREAM_START_TIME
+    elapsed = (time.monotonic() - st) if st is not None else 0.0
+    if elapsed <= 0:
+        fps = 0.0
+    else:
+        fps = round(PROCESSED_FRAMES / elapsed, 2)
     return {
         "service_name": "real-time-vision-intelligence",
-        "processed_frames": 0,
-        "fps": 0.0,
+        "processed_frames": PROCESSED_FRAMES,
+        "fps": fps,
+        "active_tracks": ACTIVE_TRACKS,
         "total_events": _count_valid_event_lines(),
     }
 
@@ -110,6 +128,8 @@ def frame():
 
 
 def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
+    global PROCESSED_FRAMES, ACTIVE_TRACKS
+
     from collections import deque
 
     from app.core.events import (
@@ -172,6 +192,7 @@ def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
 
             time_sec = frame_idx / fps
             tracks = pipeline.tracker.track(img)
+            ACTIVE_TRACKS = len(tracks)
             motion_by_id = pipeline.motion.update(tracks, time_sec)
             for ev in pipeline.event_engine.process_frame(
                 tracks, motion_by_id, time_sec
@@ -186,6 +207,7 @@ def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
             ret, buf = cv2.imencode(".jpg", img)
             if not ret or buf is None:
                 continue
+            PROCESSED_FRAMES += 1
             yield boundary + buf.tobytes() + b"\r\n"
             time.sleep(delay)
     finally:
