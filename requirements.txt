@@ -19,6 +19,7 @@ GitPython==3.1.50
 h11==0.16.0
 httptools==0.7.1
 idna==3.14
+iniconfig==2.3.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
 jsonschema==4.26.0
@@ -35,6 +36,7 @@ opencv-python==4.13.0.92
 packaging==26.2
 pandas==3.0.3
 pillow==12.2.0
+pluggy==1.6.0
 polars==1.40.1
 polars-runtime-32==1.40.1
 protobuf==7.34.1
@@ -43,7 +45,9 @@ pyarrow==24.0.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 pydeck==0.9.2
+Pygments==2.20.0
 pyparsing==3.3.2
+pytest==9.0.3
 python-dateutil==2.9.0.post0
 python-multipart==0.0.28
 PyYAML==6.0.3
