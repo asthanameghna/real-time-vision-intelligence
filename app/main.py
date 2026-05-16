@@ -191,12 +191,12 @@ def _mjpeg_frame_chunks(video_path: Path, config_path: Path):
                 continue
 
             time_sec = frame_idx / fps
-            tracks = pipeline.tracker.track(img)
-            ACTIVE_TRACKS = len(tracks)
-            motion_by_id = pipeline.motion.update(tracks, time_sec)
-            for ev in pipeline.event_engine.process_frame(
-                tracks, motion_by_id, time_sec
-            ):
+            result = pipeline.process_frame(img, time_sec)
+            tracks = result["tracks"]
+            motion_by_id = result["motion"]
+            new_events = result["events"]
+            ACTIVE_TRACKS = result["metrics"]["active_tracks"]
+            for ev in new_events:
                 recent_events.append(ev)
 
             draw_zones_and_lines(img, zone_specs, line_specs)

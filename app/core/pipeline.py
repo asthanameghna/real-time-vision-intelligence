@@ -46,6 +46,20 @@ class VisionPipeline:
             occupancy_zone_ids=self._occupancy_zone_ids,
         )
 
+    def process_frame(self, frame, time_sec: float = 0.0) -> dict:
+        tracks = self.tracker.track(frame)
+        motion_states = self.motion.update(tracks, time_sec=time_sec)
+        events = self.event_engine.process_frame(tracks, motion_states, time_sec)
+        return {
+            "tracks": tracks,
+            "motion": motion_states,
+            "events": events,
+            "metrics": {
+                "active_tracks": len(tracks),
+                "events_count": len(events),
+            },
+        }
+
     def reset_state(self) -> None:
         """Recreate tracker, motion, and event state (e.g. when the input video loops)."""
         self._init_perception_components()
